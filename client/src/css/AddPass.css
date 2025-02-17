@@ -1,0 +1,22 @@
+.file-upload {
+    display: flex;
+    align-items: center;
+    cursor: pointer;
+}
+
+.file-upload-label {
+    display: flex;
+    align-items: center;
+    font-size: 16px;
+    color: #007bff;
+    cursor: pointer;
+}
+
+.file-upload-icon {
+    margin-right: 8px;
+    font-size: 20px;
+}
+
+.file-upload-input {
+    display: none;
+}
