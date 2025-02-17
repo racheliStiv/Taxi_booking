@@ -6,8 +6,7 @@ import { imgUrl } from '../config'
 import axios from 'axios';
 import '../css/Driver.css'
 const libraries = ["places"];
-const apiKey = "AIzaSyBfgzVdk3QnZZBbyu1tguleiguMLT1SQCk"
-
+const apiKey = import.meta.env.VITE_API_KEY;
 
 const center = {
     lat: 31.7683,

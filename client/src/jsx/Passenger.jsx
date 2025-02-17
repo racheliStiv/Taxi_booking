@@ -6,13 +6,11 @@ import { useNavigate } from 'react-router-dom';
 import { url, imgUrl } from '../config'
 import { setKey, geocode, RequestType, } from "react-geocode";
 // import { AdvancedMarkerElement } from '@googlemaps/marker'
-
 import { GoogleMap, MarkerF, useLoadScript, DirectionsService, DirectionsRenderer } from '@react-google-maps/api';
 import Geolocation from '@react-native-community/geolocation';
 import axios from 'axios';
 const libraries = ["places"];
-//const apiKey = "AIzaSyD0y-2f3prjfXVnYibVVwWuq4ww2Z7azh8"
-const apiKey = "AIzaSyBfgzVdk3QnZZBbyu1tguleiguMLT1SQCk"
+const apiKey = import.meta.env.VITE_API_KEY;
 
 const Passenger = () => {
 
