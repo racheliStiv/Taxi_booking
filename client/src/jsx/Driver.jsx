@@ -1,36 +1,28 @@
-
 import React, { useState, useEffect } from 'react';
-import { GoogleMap, useLoadScript, Marker, DirectionsRenderer } from '@react-google-maps/api';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { imgUrl } from '../config'
 import axios from 'axios';
-import '../css/Driver.css'
-const libraries = ["places"];
-const apiKey = import.meta.env.VITE_API_KEY;
 
+import '../css/Driver.css'
+import Swal from 'sweetalert2';
+import withReactContent from 'sweetalert2-react-content';
 const center = {
     lat: 31.7683,
     lng: 35.2137,
 };
 
-const Driver = () => {
-    const [showTripList, setShowTripList] = useState(true);
+const Driver = ({ socket }) => {
+    const loc = useLocation();
+    const MySwal = withReactContent(Swal);
     const [isOpenMenu, setIsOpenMenu] = useState(false);
     const [isEditMode, setIsEditMode] = useState(false);
-    const [driverDetails, setDriverDetails] = useState(JSON.parse(localStorage.getItem('currentUser')));
-    const [isvacant, setIsVacant] = useState(driverDetails.vacant == 1 ? true : false);
+    const [driverDetails, setDriverDetails] = useState(loc.state.user);
     const [verifyDel, setVerifyDel] = useState(false);
     const [relevantDrives, setRelevantDrives] = useState([]);
     const [location, setLocation] = useState(center);
-    const [selectedDrive, setSelectedDrive] = useState(isvacant ? null : JSON.parse(localStorage.getItem('currentDrive')));
-    const [directions, setDirections] = useState(null);
-    // const mapContainerStyle = showTripList ? { height: '50%', width: '50%' } : { height: '50%', width: '50%' };
+    const [selectedDrive, setSelectedDrive] = useState(null);
     const navigate = useNavigate();
 
-    const { isLoaded, loadError } = useLoadScript({
-        googleMapsApiKey: apiKey,
-        libraries,
-    });
 
     //שליפת נסיעות רלוונטיות
     useEffect(() => {
@@ -39,7 +31,7 @@ const Driver = () => {
         return () => clearInterval(intervalId); // ניקוי האינטרוול כשנטענת הקומפוננטה
     }, [driverDetails.code]);
 
-    // Function to fetch relevant drives
+
     const fetchRelevantDrives = () => {
         axios.get(`http://localhost:8080/drives/relevant-drives/${driverDetails.code}/${location.lat},${location.lng}`)
             .then(response => {
@@ -49,31 +41,21 @@ const Driver = () => {
             .catch(error => console.error('Error fetching relevant drives:', error));
     };
 
+    //שליפת נסיעה נוכחית
     useEffect(() => {
-        fetchRelevantDrives(); // קריאה ראשונית לפונקציה
-    }, [driverDetails.code]); // תלות בקוד הנהג והמיקום
+        axios.get(`http://localhost:8080/drives/current-drive/${driverDetails.code}`)
+            .then(response => {
+                const currentDrive = response.data;
+                console.log(driverDetails);
 
-
-    useEffect(() => {
-        // Get current location using Geolocation API
-        if (navigator.geolocation) {
-            navigator.geolocation.getCurrentPosition((position) => {
-                const { latitude, longitude } = position.coords;
-                setLocation({
-                    lat: latitude,
-                    lng: longitude,
-                });
-            }, (error) => {
-                console.error('Error getting current position:', error);
-            });
-        } else {
-            console.error('Geolocation is not supported');
-        }
-
-        if (isLoaded && selectedDrive && !isvacant) {
-            displaySelectedDriveOnMap(selectedDrive);
-        }
+                if (currentDrive) {
+                    setSelectedDrive(currentDrive);
+                    showDriveDetails(currentDrive);
+                }
+            })
+            .catch(error => console.error('Error fetching current drive:', error));
     }, []);
+
 
     //קליטת העריכה של אינפוט
     const handleEditChange = (event) => {
@@ -86,7 +68,7 @@ const Driver = () => {
 
     //עדכון פרטי נהג
     const handleUpdateDriver = () => {
-        axios.put(`http://localhost:8080/drivers/${driverDetails.code}`, driverDetails)
+        axios.putDriver(`http://localhost:8080/drivers/${driverDetails.code}`, driverDetails)
             .then(response => {
                 localStorage.setItem('currentDriver', JSON.stringify(driverDetails));
                 alert('פרטי הנהג עודכנו בהצלחה');
@@ -98,112 +80,84 @@ const Driver = () => {
             });
     };
 
-    //מחיקת נסיעה
+    //מחיקת נהג
     const deleteDriver = () => {
         axios.delete(`http://localhost:8080/drivers/${driverDetails.code}`)
             .then(() => {
-                localStorage.removeItem('currentDriver');
+                localStorage.removeItem('current_driver');
                 navigate('/login');
             })
             .catch(error => console.error("Error deleting driver:", error));
     };
 
-
+    //התנתקות
     const logOut = () => {
-        localStorage.removeItem('currentDriver');
         navigate('/login');
     };
 
 
-    const selectDrive = (drive) => {
-        setSelectedDrive(drive);
-        setShowTripList(true); // שמור על הרשימה מוצגת
-    };
+    useEffect(() => {
+        if (socket && driverDetails?.code) {
+            socket.emit('driverConnected', { code: driverDetails.code });
+        }
+    }, [socket, driverDetails]);
+
 
     //הנהג בחר נסיעה
     const toggleVacantStatus = () => {
-        if (selectedDrive) {
-            selectedDrive.vacant = true;
-            selectedDrive.driver_code = driverDetails.code
-            selectedDrive.date_time = new Date();
-            setIsVacant(false);
-            // Update drive's vacant status on the server
+        console.log(driverDetails);
+
+        if (driverDetails.vacant == true) {
+            driverDetails.vacant = false;
+            selectedDrive.driver_code = driverDetails.code;
+            selectedDrive.date_time = new Date().toISOString().slice(0, 19).replace('T', ' ');
+            selectedDrive.vacant = false;
+            fetchRelevantDrives()
+
             axios.put(`http://localhost:8080/drives/${selectedDrive.code}`, selectedDrive)
                 .then(() => {
-                    localStorage.setItem('currentDrive', JSON.stringify(selectedDrive));
+                    socket.emit("driverStartedDrive", {
+                        passengerCode: selectedDrive.pass_code,
+                        driverName: driverDetails.name,
+                        origin: selectedDrive.source,
+                        destination: selectedDrive.destination
+                    });
                 })
                 .catch(error => console.error("Error updating drive vacant status:", error));
-            driverDetails.vacant = false;
+
             axios.put(`http://localhost:8080/drivers/${driverDetails.code}`, driverDetails)
                 .then(() => {
                     setDriverDetails(prevDriver => ({
                         ...prevDriver,
                         vacant: false
+
                     }));
-                    // Save updated driverDetails to localStorage
-                    localStorage.setItem('currentDriver', JSON.stringify(driverDetails));
-                    setShowTripList(false)
+                    showDriveDetails()
                 })
                 .catch(error => console.error("Error updating driver vacant status:", error));
-        }
-    };
-
-
-    const displaySelectedDriveOnMap = (drive) => {
-        const geocoder = new window.google.maps.Geocoder();
-
-        const geocodeAddress = (address) => {
-            return new Promise((resolve, reject) => {
-                geocoder.geocode({ address: address }, (results, status) => {
-                    if (status === window.google.maps.GeocoderStatus.OK) {
-                        const location = results[0].geometry.location;
-                        resolve(location);
-                    } else {
-                        reject(`Geocode was not successful for the following reason: ${status}`);
-                    }
-                });
+        } else {
+            MySwal.fire({
+                title: '🚗 סיום נסיעה',
+                text: 'הנך בנסיעה כרגע, האם אתה בטוח שברצונך לסיים את הנסיעה ?',
+                icon: 'warning',
+                showCancelButton: true,
+                confirmButtonText: 'כן, סיים נסיעה',
+                cancelButtonText: 'לא, ביטול',
+                confirmButtonColor: '#3085d6',
+                cancelButtonColor: '#d33',
+            }).then((result) => {
+                if (result.isConfirmed) {
+                    finishDrive();
+                }
             });
-        };
+        }
 
-        const isCoordinates = (input) => {
-            return Array.isArray(input) && input.length === 2 && typeof input[0] === 'number' && typeof input[1] === 'number';
-        };
-
-        const getGeocodePromise = (input) => {
-            if (isCoordinates(input)) {
-                return Promise.resolve(new window.google.maps.LatLng(input[0], input[1]));
-            } else {
-                return geocodeAddress(input);
-            }
-        };
-
-        Promise.all([
-            getGeocodePromise(drive.source),
-            getGeocodePromise(drive.destination)
-        ])
-            .then(([origin, destination]) => {
-                const directionsService = new window.google.maps.DirectionsService();
-                directionsService.route(
-                    {
-                        origin: origin,
-                        destination: destination,
-                        travelMode: window.google.maps.TravelMode.DRIVING,
-                    },
-                    (result, status) => {
-                        if (status === window.google.maps.DirectionsStatus.OK) {
-                            setDirections(result);
-                        } else {
-                            console.error(`Error fetching directions for drive: ${drive.code}`);
-                        }
-                    }
-                );
-            })
-            .catch(error => console.error(`Error geocoding addresses: ${error}`));
     };
 
     //הנהג סיים נסיעה
     const finishDrive = () => {
         if (selectedDrive) {
+            //עדכון כי הנהג פנוי
             driverDetails.vacant = true;
             axios.put(`http://localhost:8080/drivers/${driverDetails.code}`, driverDetails)
                 .then(() => {
@@ -211,18 +165,70 @@ const Driver = () => {
                         ...prevDriver,
                         vacant: true
                     }));
-                    localStorage.setItem('currentDriver', JSON.stringify(driverDetails));
-                    fetchRelevantDrives();
-                    setIsVacant(true);
-                    setSelectedDrive(null);
-                    setShowTripList(true);
                 })
                 .catch(error => console.error("Error updating driver vacant status:", error));
+            //עדכון כי הניסעה בוצעה
+            selectedDrive.done = true;
+            axios.put(`http://localhost:8080/drives/${selectedDrive.code}`, selectedDrive)
+                .then(() => {
+                    //הקפצת הודעה לנוסע כי הנהג סיים את הנסיעה
+                    socket.emit("driverFinishedDrive", {
+                        code: selectedDrive.pass_code,
+                        driver: driverDetails.name,
+                        origin: selectedDrive.source,
+                        destination: selectedDrive.destination
+                    });
+                    setSelectedDrive(null)
+                })
+                .catch(error => console.error("Error updating driver vacant status:", error));
+            MySwal.fire({
+                title: 'נסיעה הסתיימה',
+                text: 'הנסיעה שלך הסתיימה בהצלחה.',
+                icon: 'success',
+                confirmButtonText: 'אוקי'
+            });
+
         }
     };
 
-    if (loadError) return 'Error loading maps';
-    if (!isLoaded) return 'Loading maps';
+    //פרטי הנסיעה הנוכחית
+    const showDriveDetails = async (currentDrive) => {
+        if (currentDrive == null && selectedDrive != null) {
+            currentDrive = selectedDrive;
+            MySwal.fire({
+                title: '🚗 פרטי הנסיעה הנוכחית',
+                html: `
+      <div dir="rtl" style="text-align: right; font-size: 16px;">
+        <p><strong>מוצא:</strong> ${currentDrive?.source}</p>
+        <p><strong>יעד:</strong> ${currentDrive?.destination}</p>
+        <p><strong>תאריך:</strong> ${new Date(currentDrive?.date_time).toLocaleDateString()}</p>
+        <p><strong>מספר מקומות ברכב:</strong> ${currentDrive?.num_of_pass}</p>
+      </div>
+    `,
+                confirmButtonText: 'סיום נסיעה',
+                showCancelButton: true,
+                cancelButtonText: 'ביטול',
+                confirmButtonColor: '#3085d6',
+                cancelButtonColor: '#d33',
+                customClass: {
+                    popup: 'swal-wide'
+                }
+            }).then((result) => {
+                if (result.isConfirmed) {
+                    finishDrive(); // קריאה לפונקציית סיום נסיעה
+                }
+            });
+        }
+        else {
+            Swal.fire({
+                title: 'אינך בנסיעה כרגע',
+                text: 'אין לך נסיעה נוכחית. אנא בחר נסיעה מהרשימה. ',
+                icon: 'info',
+                confirmButtonText: 'אוקי',
+            });
+        }
+    };
+
 
     return (
         <div className="mainD">
@@ -234,7 +240,6 @@ const Driver = () => {
                         <line x1="3" y1="18" x2="21" y2="18" stroke="currentColor" strokeWidth="4" strokeLinecap="round" />
                     </svg>
                 </button>
-
                 {isOpenMenu &&
                     <div className='menu'>
                         <div style={{ fontSize: "25px", position: 'fixed', right: '40%', top: '7%', textAlign: 'center', margin: '0 auto' }}>
@@ -242,6 +247,7 @@ const Driver = () => {
                             <p>{driverDetails.name}</p>
                         </div>
                         <div style={{ flexDirection: 'column', display: 'flex', alignItems: 'center', marginTop: '70%' }}>
+                            <button style={{ position: 'sticky', marginTop: "3%", width: '50%', color: 'black', fontWeight: 'bold', fontSize: '18px', zIndex: '100' }} onClick={() => showDriveDetails()}>פרטי נסיעה נוכחית</button>
                             <button style={{ position: 'sticky', marginTop: "3%", width: '50%', color: 'black', fontWeight: 'bold', fontSize: '18px', zIndex: '100' }} onClick={() => setIsEditMode(true)}>עדכון הפרטים</button>
                             <button style={{ position: 'sticky', marginTop: "3%", width: '50%', color: 'black', fontWeight: 'bold', fontSize: '18px', zIndex: '100' }} onClick={() => setVerifyDel(true)} >מחיקת נהג</button>
                             <button style={{ position: 'sticky', marginTop: "3%", width: '50%', color: 'black', fontWeight: 'bold', fontSize: '18px', zIndex: '100' }} onClick={() => logOut()}>logout</button>
@@ -251,7 +257,7 @@ const Driver = () => {
                 }
             </div>
 
-            {showTripList && isvacant &&
+            {
                 <div className='driveList' style={{ direction: 'rtl' }}>
                     <h3>רשימת הנסיעות הרלוונטיות</h3>
                     <ul style={{ listStyleType: 'none', paddingLeft: '0', margin: '0' }}>
@@ -260,18 +266,16 @@ const Driver = () => {
                                 <p>מוצא: {drive.source}</p>
                                 <p>יעד: {drive.destination}</p>
 
-                                {selectedDrive && selectedDrive.code == drive.code ? (
+                                {selectedDrive?.code === drive.code ? (
                                     <>
                                         <p>מספר מקומות ברכב:  {drive.num_of_pass}</p>
                                         <p>סטטוס: {drive.vacant ? 'לא פנוי' : ' פנוי'}</p>
                                         <button onClick={toggleVacantStatus}>בחר נסיעה זו</button>
-                                        <button onClick={() => selectDrive(null)}>X</button>
+                                        <button onClick={() => setSelectedDrive(null)}>X</button>
                                     </>
                                 ) : (
                                     <>
-                                        <button onClick={() => selectDrive(drive)}>הצג עוד</button>
-                                        <button onClick={() => selectDrive(null)}>X</button>
-
+                                        <button onClick={() => setSelectedDrive(drive)}>הצג עוד</button>
                                     </>
                                 )}
                             </li>
@@ -291,10 +295,12 @@ const Driver = () => {
                                 <div className='texts'>
                                     <p>שם</p>
                                     <p>מספר מקומות </p>
+                                    <p>טלפון</p>
                                 </div>
                                 <div className='subInputs'>
                                     <input type="text" placeholder='שם' name='name' value={driverDetails.name} onChange={handleEditChange} required />
-                                    <input type="text" placeholder='מספר מקומות ברכב' name='num_of_places' value={driverDetails.num_of_places} onChange={handleEditChange} />
+                                    <input type="text" placeholder='מספר מקומות ברכב' name='num_of_pass' value={driverDetails.num_of_places} onChange={handleEditChange} />
+                                    <input type="text" placeholder='טלפון' name='phone' value={driverDetails.phone} onChange={handleEditChange} />
                                 </div>
 
                             </div>
@@ -315,46 +321,30 @@ const Driver = () => {
                 </div>
             )}
 
-            {selectedDrive && !isvacant && (
-                <>
-
-                    <div style={{ marginTop: '20px', direction: 'rtl' }}>
-                        <h3>פרטי הנסיעה שנבחרה</h3>
-                        <p>מוצא: {selectedDrive.source}</p>
-                        <p>יעד: {selectedDrive.destination}</p>
-                        <p>תאריך: {new Date(selectedDrive.date_time).toLocaleDateString()}</p>
-                        <p>מספר מקומות ברכב: {selectedDrive.num_of_pass}</p>
-                        <button onClick={finishDrive}>סיום נסיעה</button>
-                    </div>
-                    {/* <GoogleMap
-                        mapContainerStyle={mapContainerStyle}
-                        zoom={15}
-                        center={location}
-                        options={{ disableDefaultUI: true }}
-                        onLoad={displaySelectedDriveOnMap(selectedDrive)}
-                    >
-                        {relevantDrives.map((drive, index) => (
-                            <Marker
-                                key={index}
-                                position={{
-                                    lat: parseFloat(drive.originLatitude),
-                                    lng: parseFloat(drive.originLongitude)
-                                }}
-                                onClick={() => selectDrive(drive)}
-                            />
-                        ))}
-                        {selectedDrive && !isvacant && (
-                            <DirectionsRenderer
-                                options={{ suppressMarkers: true }}
-                                directions={directions}
-                            />
-                        )}
-                    </GoogleMap> */}
-                </>
-            )}
         </div>
     );
 };
 
 export default Driver;
 
+
+// Get current location using Geolocation API
+// useEffect(() => {
+//     if (navigator.geolocation) {
+//         navigator.geolocation.getCurrentPosition((position) => {
+//             const { latitude, longitude } = position.coords;
+//             setLocation({
+//                 lat: latitude,
+//                 lng: longitude,
+//             });
+//         }, (error) => {
+//             console.error('Error getting current position:', error);
+//         });
+//     } else {
+//         console.error('Geolocation is not supported');
+//     }
+
+//     if (isLoaded && selectedDrive && !isvacant) {
+//         displaySelectedDriveOnMap(selectedDrive);
+//     }
+// }, []);

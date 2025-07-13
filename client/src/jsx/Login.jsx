@@ -1,19 +1,18 @@
+import 'boxicons/css/boxicons.min.css';
+import '../css/Login.css';
+
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { FaPaperclip } from 'react-icons/fa';
-import Swal from 'sweetalert2'
+import Swal from 'sweetalert2';
 import axios from 'axios';
-import { imgUrl } from '../config'
-import '../css/Login.css';
-
-const Login = () => {
-    const [allUsers, setAllUsers] = useState([]);
-    const [hoveredUser, setHoveredUser] = useState(null);
-    const [currentUser, setCurrentUser] = useState(null);
+import { imgUrl } from '../config';
+const AuthForm = () => {
+ 
     const [file, setFile] = useState(null);
-    const [isAddUser, setIsAddUser] = useState(false);
     const [isAddingPassenger, setIsAddingPassenger] = useState(false);
-    const [isAddingDriver, setIsAddingDriver] = useState(false);
+    const [isAddingDriver, setIsAddingDriver] = useState(true);
+    const [isRegisterMode, setIsRegisterMode] = useState(false);
     const [userDetails, setUserDetails] = useState({
         name: '',
         password: '',
@@ -22,199 +21,193 @@ const Login = () => {
         vacant: '',
         numOfPlaces: '',
         dateOfBirth: '',
-        profilPic: ''
+        profilPic: '',
+        type: ''
     });
-    const [originalUsers, setOriginalUsers] = useState([]);
+
     const navigate = useNavigate();
-//שליפת כל המשתמשים
-    useEffect(() => {
-        axios.get('http://localhost:8080/passengers')
+
+
+    const handleChange = (event) => {
+        const { name, value, files } = event.target;
+        if (name === 'profilPic') {
+            setFile(files[0]);
+        }
+        setUserDetails(prev => ({ ...prev, [name]: name === 'profilPic' ? files[0] : value }));
+    };
+
+
+    const addUser = () => {
+        console.log(userDetails);
+        const phoneRegex = /^\d{10}$/;
+        if (!userDetails.name) return alert('יש להזין שם');
+        if (!userDetails.password) return alert('יש להזין סיסמה');
+        if (userDetails.phone && !phoneRegex.test(userDetails.phone)) return alert('מספר טלפון לא תקין');
+
+        const data = new FormData();
+        Object.entries(userDetails).forEach(([key, val]) => data.append(key, val));
+        data.append('profilPic', file);
+
+        const url = isAddingPassenger ? 'http://localhost:8080/passengers' : 'http://localhost:8080/drivers';
+        axios.post(url, userDetails)
+            .then(res => {
+                const newUser = res.data;
+                const userType = isAddingPassenger ? 'passenger' : 'driver';
+                newUser.type = userType;
+                navigate(`/${userType}/${newUser.name}`, { state: { user: newUser } });
+            })
+
+            .catch((error) => {
+                Swal.fire({
+                    icon: 'error',
+                    title: 'שגיאה',
+                    text: error?.response?.status === 500
+                        ? 'משתמש קיים'
+                        : 'אירעה שגיאה בעת הוספת המשתמש',
+                });
+            });
+
+    };
+
+
+    const Login = (user) => {        
+        axios.post('http://localhost:8080/passengers/checkPassword', {
+            name: user.name,
+            password: user.password
+        })
             .then(response => {
-                const passengers = Array.isArray(response.data) ? response.data : [];
-                return axios.get('http://localhost:8080/drivers')
-                    .then(response => {
-                        const drivers = Array.isArray(response.data) ? response.data : [];
-                        const allUsers = [
-                            ...passengers.map(user => ({ ...user, type: 'passenger' })),
-                            ...drivers.map(user => ({ ...user, type: 'driver' }))
-                        ];
-                        setAllUsers(allUsers);
-                        setOriginalUsers(allUsers); // Save original users
+
+                if (response.data.isValid) {
+                    let currentUser = response.data.currentuser[0];                    
+                    const key = response.data.type === 'passenger' ? 'current_pass' : 'current_driver';
+                    // localStorage.setItem(key, JSON.stringify(currentUser));                    
+                    navigate(`/${response.data.type}/${currentUser.name}`, { state: { user: currentUser } });
+                } else {
+                    Swal.fire({
+                        icon: 'error',
+                        title: 'שגיאה',
+                        text: "שם משתמש או סיסמה שגויים",
                     });
+                }
             })
             .catch(error => {
-                if (error.response) {
-                    alert(`Server failed: ${error.response.data}`);
-                } else if (error.request) {
-                    alert('No response received from server');
-                } else {
-                    alert(`Error: ${error.message}`);
-                }
+                Swal.fire({
+                    icon: 'error',
+                    title: 'שגיאה',
+                    text: "שם משתמש או סיסמה שגויים",
+                });
             });
-    }, []);
-// שליחת הסיסמא לשרת 
-    const handleSelect = (user) => {
-        setCurrentUser(user);
+    };
 
-        Swal.fire({
-            title: 'הזן סיסמת משתמש',
-            input: 'password',
-            inputAttributes: {
-                autocapitalize: 'off'
-            },
-            showCloseButton: true,
-            closeButtonHtml: '<span style="font-size: 24px; color: #888;">&#10005;</span>',
-            confirmButtonText: 'אישור',
-            showLoaderOnConfirm: true,
-            preConfirm: (pass) => {
-                
-                return  axios.post('http://localhost:8080/passengers/checkPassword', {
-                    name: user.name,
-                    password: pass
-                })
-                    .then(response => {
-                        if (response.data.isValid) {
-                            const newUser = { ...user };
-                            localStorage.setItem('currentUser', JSON.stringify(newUser));
-                            setCurrentUser(newUser);
-                            return "ברוך הבא";
-                        } else {
-                            throw new Error("סיסמה שגויה, נסה שנית.");
-                        }
-                    })
-                    .catch(error => {
-                        Swal.showValidationMessage(
-                            `שגיאה בבדיקת הסיסמה: ${error}`
-                        );
-                    });
-            },
-            allowOutsideClick: () => !Swal.isLoading()
-        }).then((result) => {
-            if (result.isConfirmed) {
-                navigate(`/${user.type}/${user.name}`);
-            }
-        });
-    };
-//תפיסת הפרטים המוכנסים
-    const handleChange = (event) => {
-        const { name, value } = event.target;
-        setUserDetails((prevDetails) => ({
-            ...prevDetails,
-            [name]: value
-        }));
-    };
-//הוספת משתמש חדש
-    const addUser = () => {
-        const phoneRegex = /^\d{10}$/;
-        if (userDetails.name.length === 0) {
-            alert("יש להזין שם");
-        } else if (userDetails.password.length === 0) {
-            alert("יש להזין סיסמה");
-        } else if (!phoneRegex.test(userDetails.phone) && userDetails.phone.length !== 0) {
-            alert('מספר טלפון לא תקין');
-        } else {
-            const data = new FormData();
-            Object.keys(userDetails).forEach(x => {
-                data.append(x, userDetails[x])
-            })
-            //הוספת התמונה
-            data.append('profilPic', file)
-            const url = isAddingPassenger ? `http://localhost:8080/passengers` : 'http://localhost:8080/drivers';
-            axios.post(url, userDetails).then(newUser => {
-                localStorage.setItem('currentUser', JSON.stringify(userDetails));
-                setCurrentUser(newUser.data);
-            }).catch(() => { alert('ERROR') });
-            setIsAddUser(false);
-        }
-    };
-//חיפוש לפי שם משתמש
-    const handleSearch = (event) => {
-        const searchValue = event.target.value.toLowerCase();
-        if (searchValue.trim() === '') {
-            setAllUsers(originalUsers); // Restore original users
-        } else {
-            setAllUsers(prevUsers => prevUsers.filter(user => user.name.toLowerCase().includes(searchValue)));
-        }
-    };
+
     return (
-        <div className='mainL'>
-            {isAddUser && <div>
-                <div className="addUserL">
+        <div className='wrapper'>
+            <div className={`container ${isRegisterMode ? 'active' : ''}`}>
+                <div className="form-box login">
                     <form>
-                    <button id="addpassL"  onClick={() => setIsAddUser(!isAddUser)}>+</button>
-                        <p>הוספת משתמש</p>
-                        <div>
-                            <input className='addL' type="text" placeholder='שם' onChange={handleChange} name='name' required />
-                            <input className='addL'type="password" placeholder='סיסמה' onChange={handleChange} name='password' required />
-                            {isAddingPassenger && (
-                                <>
-                                    <input className='addL' type="text" placeholder='כתובת' onChange={handleChange} name='address' />
-                                    <input className='addL' type="text" placeholder='טלפון' onChange={handleChange} name='phone' />
-                                </>
-                            )}
-                            {isAddingDriver && (
-                                <>
-                                    <input className='addL' type="text" placeholder='מספר מקומות ברכב' onChange={handleChange} name='numOfPlaces' />
-                                    <input className='addL' type="text" placeholder='תאריך לידה' onChange={handleChange} name='dateOfBirth' />
-                                </>
-                            )}
-                            <label htmlFor="file-input" className="file-upload-label">
-                                <FaPaperclip className="file-upload-icon" />תמונת פרופיל
-                            </label>
-                            <input name='profilPic' type="file" id="file-input" className="file-upload-input" onChange={(event) => setFile(event.target.files[0])} />
+                        <h1>Login</h1>
+                        <div className="input-box">
+                            <input type="text" placeholder="Username" required name="name" onChange={handleChange} />
+                            <i className="bx bxs-user"></i>
                         </div>
-                        <div>
+                        <div className="input-box">
+                            <input type="password" placeholder="Password" required name="password" onChange={handleChange} />
+                            <i className="bx bxs-lock-alt"></i>
+                        </div>
+                        <button type="button" className="btn" onClick={() => Login(userDetails)}>Login</button>
+                    </form>
+                </div>
+
+
+                <div className="form-box register">
+                    <form>
+                        <h1>Registration</h1>
+
+                        <div className="input-box">
+                            <input type="text" placeholder="Username" name="name" onChange={handleChange} />
+                            <i className="bx bxs-user"></i>
+                        </div>
+
+                        <div className="input-box">
+                            <input type="email" placeholder="Email" name="email" onChange={handleChange} />
+                            <i className="bx bxs-envelope"></i>
+                        </div>
+
+                        <div className="input-box">
+                            <input type="password" placeholder="Password" name="password" onChange={handleChange} />
+                            <i className="bx bxs-lock-alt"></i>
+                        </div>
+
+                        <div className="input-box">
+                            <input type="text" placeholder="Phone" name="phone" onChange={handleChange} />
+                            <i className="bx bxs-phone"></i>
+                        </div>
+
+                        {isAddingPassenger && (
+                            <div className="input-box">
+                                <input type="text" placeholder="Address" name="address" onChange={handleChange} />
+                                <i className="bx bxs-home"></i>
+                            </div>
+                        )}
+                        {isAddingDriver && (
+                            <div className="input-box">
+                                <select name="numOfPlaces" onChange={handleChange} defaultValue="">
+                                    <option value="" disabled>choose number of seats</option>
+                                    <option value="5">5</option>
+                                    <option value="7">7</option>
+                                    <option value="10">10</option>
+                                </select>
+                                <i className="bx bxs-car-garage"></i>
+                            </div>
+                        )}
+                        <div className="role-toggle">
                             <button
                                 type="button"
+                                className={isAddingPassenger ? "role-btn active" : "role-btn"}
                                 onClick={() => {
-                                    setIsAddingPassenger(true); // לחיצה על כפתור נוסע
-                                    setIsAddingDriver(false); // איפוס כפתור נהג
+                                    setIsAddingPassenger(true);
+                                    setIsAddingDriver(false);
                                 }}
-                                style={{ margin: '10px', backgroundColor: isAddingPassenger ? 'lightblue' : 'white' }}
                             >
                                 נוסע
                             </button>
                             <button
                                 type="button"
+                                className={isAddingDriver ? "role-btn active" : "role-btn"}
                                 onClick={() => {
-                                    setIsAddingDriver(true); // לחיצה על כפתור נהג
-                                    setIsAddingPassenger(false); // איפוס כפתור נוסע
+                                    setIsAddingDriver(true);
+                                    setIsAddingPassenger(false);
                                 }}
-                                style={{ margin: '10px', backgroundColor: isAddingDriver ? 'lightblue' : 'white' }}
                             >
                                 נהג
                             </button>
                         </div>
-                        <button className='btn' onClick={addUser}>הוסף</button>
+
+                        <div className="input-box file-upload">
+                            <label htmlFor="file-input" className="file-upload-label">
+                                <FaPaperclip className="file-upload-icon" /> תמונת פרופיל
+                            </label>
+                            <input name="profilPic" type="file" id="file-input" className="file-upload-input" onChange={handleChange} />
+                        </div>
+
+                        <button type="button" className="btn" onClick={addUser}>Register</button>
                     </form>
                 </div>
-            </div>}
-            {!isAddUser && <div className='allPassL'>
-            <h2 style={{ textAlign: 'center' }}>our members </h2>
-             
-                <div id='title'>
-                <button id="addpassL"  onClick={() => setIsAddUser(!isAddUser)}>+</button>
-                <input id='search' type="text" placeholder="חפש לפי שם" onChange={handleSearch} /></div>
-                <ul className='userListL' style={{ listStyleType: 'none' }}>
-                    {allUsers.map((user, index) => (
-                        <li id='liUsersL' key={index}
-                            style={{ transition: 'transform 0.2s ease-in-out', transform: hoveredUser === user ? 'scale(1.1)' : 'scale(1)', boxShadow: hoveredUser === user ? '0 0 10px rgba(0, 0, 0, 0.2)' : 'none', backgroundColor: '#f0f0f0'}}
-                            onMouseEnter={() => setHoveredUser(user)}
-                            onMouseLeave={() => setHoveredUser(null)}
-                            onClick={() => handleSelect(user)}>
-                            <div >
-                                <span >{user.name}</span>
-                                <img src={`${imgUrl}/pictures/${user.profilPic}`} style={{ width: '50px', height: '50px', borderRadius: '50%', marginLeft: '10px' }} />
-                            </div>
-                        </li>
-                    ))}
-                </ul>
 
+                <div className="toggle-box">
+                    <div className="toggle-panel toggle-left">
+                        <h1>Hello, Welcome!</h1>
+                        <p>Don't have an account?</p>
+                        <button className="btn register-btn" type="button" onClick={() => setIsRegisterMode(true)}>Register</button>
+                    </div>
+                    <div className="toggle-panel toggle-right">
+                        <h1>Welcome Back!</h1>
+                        <p>Already have an account?</p>
+                        <button className="btn login-btn" type="button" onClick={() => setIsRegisterMode(false)}>Login</button>
+                    </div>
+                </div>
             </div>
-              } 
         </div>
-     
-    );  
+    );
 };
-
-export default Login;
+export default AuthForm;
