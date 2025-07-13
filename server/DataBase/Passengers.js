@@ -13,16 +13,16 @@ export async function getPassenger(name, password) {
         const [[passenger]] = await pool.query(`SELECT code, name, address, phone, profilPic, active FROM passengers WHERE active = true AND code = ?`, [name]);
         return passenger;
     }
-    const [[passenger]] = await pool.query(`SELECT code, name, address, phone, profilPic, active FROM passengers WHERE active = true AND name=? AND password = ?`, [name, password]);
+    const [passenger] = await pool.query(`SELECT code, name, address, phone, profilPic, active FROM passengers WHERE active = true AND name=? AND password = ?`, [name, password]);
     return passenger;
 }
 
-export async function postPassenger(name, password, address, phone, profilPic) {
+export async function postPassenger(name, password, address, phone, profilPic) {    
     const passengerIsExists = await getPassenger(name, password);
-    if (passengerIsExists)
+    if (passengerIsExists.length != 0)
         throw new Error(`passenger ${name} allready exist`);
-    const [{ insertCode }] = await pool.query(`INSERT INTO passengers ( name, password, address, phone, profilPic) VALUES (?, ?,?, ?, ?)`, [name, password, address, phone, profilPic]);
-    return await getPassenger(insertCode);
+    const [{ insertId }] = await pool.query(`INSERT INTO passengers ( name, password, address, phone, profilPic) VALUES (?, ?,?, ?, ?)`, [name, password, address, phone, profilPic]);
+    return await getPassenger(insertId);
 }
 
 export async function putPassenger(code, name, address, phone, profilPic) {

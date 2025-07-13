@@ -2,7 +2,7 @@ import pool from "../dataBase.js";
 
 export async function getDrivers(code) {
     if (!code) {
-        const [allDrivers] = await pool.query("SELECT code, name, vacant, num_of_places, active, profilPic FROM drivers WHERE active = true");
+        const [allDrivers] = await pool.query("SELECT code, name, vacant, num_of_places, active, profilPic, phone FROM drivers WHERE active = true");
         return allDrivers;
     } else {
         return getDriver(code);
@@ -11,30 +11,31 @@ export async function getDrivers(code) {
 
 export async function getDriver(name, pass) {
     if (name != null && pass == null) {
-        const [[driver]] = await pool.query(`SELECT code, name, vacant, num_of_places, active,profilPic FROM drivers WHERE code = ? `, [name]);
+        const [[driver]] = await pool.query(`SELECT code, name, vacant, num_of_places, active,profilPic, phone FROM drivers WHERE code = ? `, [name]);
         return driver;
     }
-    const [[driver]] = await pool.query(`SELECT code, name, vacant, num_of_places, active, profilPic FROM drivers WHERE password = ? AND name = ?`, [pass, name]);
+    const [driver] = await pool.query(`SELECT code, name, vacant, num_of_places, active, profilPic, phone FROM drivers WHERE password = ? AND name = ?`, [pass, name]);
     return driver;
 }
 
 export async function getDriverByCode(code) {
-    const [[driver]] = await pool.query(`SELECT code, name, vacant, num_of_places, active, profilPic FROM drivers WHERE code = ?`, [code]);
+    const [[driver]] = await pool.query(`SELECT code, name, vacant, num_of_places, active, profilPic, phone FROM drivers WHERE code = ?`, [code]);
     return driver;
 }
 
-export async function postDriver(name, vacant, numOfPlaces, password,profilPic) {
+export async function postDriver(name, numOfPlaces, password, profilPic, phone) {
 
     const driverIsExists = await getDriver(name, password);
-    if (driverIsExists) throw new Error(`driver ${name} already exists`);
+
+    if (driverIsExists.length != 0) throw new Error(`driver ${name} already exists`);
     const [{ insertId }] = await pool.query(
-        `INSERT INTO drivers (name, vacant, num_of_places, password, active, profilPic) VALUES (?, ?, ?, ?, ?, ?)`,
-        [name, vacant, numOfPlaces, password, profilPic]
+        `INSERT INTO drivers (name, vacant, num_of_places, password, active, profilPic, phone) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        [name, 1, numOfPlaces, password, 1, profilPic, phone]
     );
     return await getDriverByCode(insertId);
 }
 
-export async function putDriver(name, vacant, numOfPlaces, code,profilPic) {
+export async function putDriver(name, vacant, numOfPlaces, code, profilPic, phone) {
     try {
         const driverIsExists = await getDriverByCode(code);
         if (!driverIsExists) throw new Error(`driver ${name} does not exist`);
@@ -42,10 +43,11 @@ export async function putDriver(name, vacant, numOfPlaces, code,profilPic) {
             name = driverIsExists.name;
         }
         const [result] = await pool.query(
-            `UPDATE drivers SET name=?, vacant=?, num_of_places=?,profilPic= ? WHERE code=?`,
-            [name, vacant, numOfPlaces,profilPic, driverIsExists.code]
+            `UPDATE drivers SET name=?, vacant=?, num_of_places=?,profilPic= ?, phone =? WHERE code=?`,
+            [name, vacant, numOfPlaces, profilPic, phone, driverIsExists.code]
         );
-        console.log(result.numOfPlaces)
+        console.log(result);
+
         if (result.affectedRows === 0) throw new Error(`driver ${name} was not updated`);
         return await getDriverByCode(code);
     } catch (error) {

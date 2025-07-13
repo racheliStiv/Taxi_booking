@@ -1,11 +1,13 @@
 // import { getDriver, getDrivers, postDriver, putDriver, deleteDriver } from "../DataBase/Passengers.js";
 import express from "express"
 import { postPassenger, getPassengers, getPassenger, putPassenger, deletePassenger, isDriveAccept, getPassengerforPassWord } from "../DataBase/Passengers.js";
+import { getDriver } from "../DataBase/Drivers.js";
 import { getDriverforPassWord } from "../DataBase/Drivers.js"
 const app = express.Router();
 
 import { v4 } from "uuid";
-import multer from "multer"; const storage = multer.diskStorage({
+import multer from "multer"; import { getDrive } from "../DataBase/Drives.js";
+const storage = multer.diskStorage({
     destination: (req, file, cb) => {
         cb(null, 'img/pictures');
     },
@@ -17,6 +19,7 @@ import multer from "multer"; const storage = multer.diskStorage({
 });
 
 const upload = multer({ storage });
+
 //החזרת כל הנוסעים
 app.get('/', async (req, res) => {
     const { code } = req.query;
@@ -25,6 +28,8 @@ app.get('/', async (req, res) => {
 });
 
 app.get('/passenger', async (req, res) => {
+    console.log("שלוםלום");
+
     const { name, password } = req.query;
     if (!name || !password) {
         return res.status(400);
@@ -40,7 +45,7 @@ app.get('/passenger', async (req, res) => {
 //הוספת נוסע
 app.post('/', upload.single('profilPic'), async (req, res) => {
     console.log(req)
-    const fileName = req.file.filename;
+        const fileName = req.file?.filename || null; 
     const { name, password, address, phone } = req.body;
     try {
         const newPassenger = await postPassenger(name, password, address, phone, fileName);
@@ -91,15 +96,19 @@ app.post('/checkPassword', async (req, res) => {
         if (passengers.length === 0 && drivers.length === 0) {
             return res.json({ isValid: false, error: 'משתמש לא נמצא' });
         }
-        let isValid;
+        let isValid, currentuser, type;
         if (passengers.length != 0) {
             isValid = passengers.some(p => p.password === password);
+            currentuser = await getPassenger(name, password);
+            type = "passenger";
         }
         else {
             isValid = drivers.some(p => p.password === password);
+            currentuser = await getDriver(name, password)
+            type = "driver"
         }
         if (isValid) {
-            res.json({ isValid: true });
+            res.json({ isValid: true, currentuser: currentuser,type: type });
         } else {
             res.json({ isValid: false, error: 'סיסמה שגויה' });
         }
